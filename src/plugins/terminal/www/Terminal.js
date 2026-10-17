@@ -14,9 +14,9 @@ const DISTROS = {
         defaultShell: "/bin/bash",
         initScript: "init-distro.sh",
         arch: {
-            "arm64-v8a": { dir: "arm64", file: "ubuntu-rootfs-arm64.tar.gz" },
-            "armeabi-v7a": { dir: "armhf", file: "ubuntu-rootfs-armhf.tar.gz" },
-            "x86_64": { dir: "amd64", file: "ubuntu-rootfs-amd64.tar.gz" },
+            "arm64-v8a": { dir: "arm64", file: "ubuntu-base-24.04.5-base-arm64.tar.gz" },
+            "armeabi-v7a": { dir: "armhf", file: "ubuntu-base-24.04.5-base-armhf.tar.gz" },
+            "x86_64": { dir: "amd64", file: "ubuntu-base-24.04.5-base-amd64.tar.gz" },
         },
     },
 };
@@ -333,17 +333,11 @@ const Terminal = {
             try {
                 distroBase = await Executor.execute("echo $DISTRO_ROOTFS_BASE");
             } catch (e) {
-                // ignore — distroBase stays empty below
+                // ignore — will use default below
             }
             distroBase = (distroBase || "").trim();
             if (!distroBase) {
-                throw new Error(
-                    "No distro rootfs mirror configured.\n" +
-                    "  F-Droid: bundle distro_assets/<arch>/<distro>.rootfs in the app.\n" +
-                    "  Play Store: set DISTRO_ROOTFS_BASE to a mirror hosting rootfs tarballs,\n" +
-                    "  e.g. https://example.com/mirrors/ then files are fetched as\n" +
-                    "  $DISTRO_ROOTFS_BASE/<arch>/<distro-rootfs>.tar.gz"
-                );
+                distroBase = "https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/";
             }
 
             const libraryBaseUrl = buildUrl(
@@ -382,8 +376,6 @@ const Terminal = {
 
             const distroUrl = buildUrl(
                 distroBase,
-                architecture.distroDirectory,
-                "/",
                 architecture.distroFilename
             );
 
