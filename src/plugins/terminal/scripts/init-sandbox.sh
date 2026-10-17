@@ -1,7 +1,6 @@
 export LD_LIBRARY_PATH=$PREFIX
 
 mkdir -p "$PREFIX/tmp"
-mkdir -p "$PREFIX/debian/tmp"
 mkdir -p "$PREFIX/public"
 
 export PROOT_TMP_DIR=$PREFIX/tmp
@@ -40,7 +39,6 @@ fi
 ARGS="--kill-on-exit"
 
 
-
 for system_mnt in /apex /odm /product /system /system_ext /vendor /linkerconfig/ld.config.txt /linkerconfig/com.android.art/ld.config.txt /plat_property_contexts /property_contexts; do
 
  if [ -e "$system_mnt" ]; then
@@ -48,8 +46,6 @@ for system_mnt in /apex /odm /product /system /system_ext /vendor /linkerconfig/
   ARGS="$ARGS -b ${system_mnt}"
  fi
 done
-
-
 
 
 unset system_mnt
@@ -66,7 +62,7 @@ ARGS="$ARGS -b $NATIVE_DIR"
 ARGS="$ARGS -b $PREFIX/public:/public"
 ARGS="$ARGS -b $PREFIX/public:/home"
 ARGS="$ARGS -b $PREFIX/public:/root"
-ARGS="$ARGS -b $PREFIX/debian/tmp:/dev/shm"
+ARGS="$ARGS -b $PREFIX/distros/$DISTRO/tmp:/dev/shm"
 
 
 # PRoot canonicalizes every -b host path with realpath(3).  The magic links
@@ -118,7 +114,7 @@ if can_bind "/proc/$SELF_PID/fd/2"; then
 fi
 
 
-ARGS="$ARGS -r $PREFIX/debian"
+ARGS="$ARGS -r $PREFIX/distros/$DISTRO"
 ARGS="$ARGS -0"
 ARGS="$ARGS --link2symlink"
 ARGS="$ARGS --sysvipc"
@@ -127,17 +123,25 @@ ARGS="$ARGS -L"
 
 FAILSAFE=false
 INSTALLING=false
+DISTRO="debian"
+
+# First positional argument is the distro id; everything else is a flag.
+if [ $# -gt 0 ]; then
+    case "$1" in
+        --failsafe|--installing) ;;
+        *) DISTRO="$1"; shift ;;
+    esac
+fi
 
 for arg in "$@"; do
     case "$arg" in
-        --failsafe)
-            FAILSAFE=true
-            ;;
-        --installing)
-            INSTALLING=true
-            ;;
+        --failsafe) FAILSAFE=true ;;
+        --installing) INSTALLING=true ;;
     esac
 done
+
+# Allow distro to be overridden via $DISTRO env var
+DISTRO="${DISTRO:-debian}"
 
 if [ "$FAILSAFE" = true ] && [ "$INSTALLING" != true ]; then
     echo "$$" > "$PREFIX/pid"
@@ -150,5 +154,5 @@ if [ "$FAILSAFE" = true ] && [ "$INSTALLING" != true ]; then
 
     exec "$LINKER" "$PREFIX/axs" -c "sh"
 else
-    exec "$PROOT" $ARGS /bin/sh "$PREFIX/init-debian.sh" "$@"
+    exec "$PROOT" $ARGS /bin/sh "$PREFIX/init-distro.sh" "$DISTRO" "$@"
 fi

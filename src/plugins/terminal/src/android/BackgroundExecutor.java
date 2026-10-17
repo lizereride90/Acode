@@ -26,7 +26,7 @@ public class BackgroundExecutor extends CordovaPlugin {
         switch (action) {
             case "start":
                 String pid = UUID.randomUUID().toString();
-                startProcess(pid, args.getString(0), args.getString(1).equals("true"), callbackContext);
+                startProcess(pid, args.getString(0), args.getString(1), callbackContext);
                 return true;
             case "write":
                 writeToProcess(args.getString(0), args.getString(1), callbackContext);
@@ -35,7 +35,7 @@ public class BackgroundExecutor extends CordovaPlugin {
                 stopProcess(args.getString(0), callbackContext);
                 return true;
             case "exec":
-                exec(args.getString(0), args.getString(1).equals("true"), callbackContext);
+                exec(args.getString(0), args.getString(1), callbackContext);
                 return true;
             case "isRunning":
                 isProcessRunning(args.getString(0), callbackContext);
@@ -62,10 +62,10 @@ public class BackgroundExecutor extends CordovaPlugin {
         }
     }
 
-    private void exec(String cmd, boolean useDebian, CallbackContext callbackContext) {
+    private void exec(String cmd, String distro, CallbackContext callbackContext) {
         cordova.getThreadPool().execute(() -> {
             try {
-                ProcessManager.ExecResult result = processManager.executeCommand(cmd, useDebian);
+                ProcessManager.ExecResult result = processManager.executeCommand(cmd, distro);
                 
                 if (result.isSuccess()) {
                     callbackContext.success(result.stdout);
@@ -78,17 +78,17 @@ public class BackgroundExecutor extends CordovaPlugin {
         });
     }
 
-    private void startProcess(String pid, String cmd, boolean useDebian, CallbackContext callbackContext) {
+    private void startProcess(String pid, String cmd, String distro, CallbackContext callbackContext) {
         cordova.getThreadPool().execute(() -> {
             try {
-                ProcessBuilder builder = processManager.createProcessBuilder(cmd, useDebian);
+                ProcessBuilder builder = processManager.createProcessBuilder(cmd, distro);
                 Process process = builder.start();
 
                 long pidVal = ProcessUtils.getPid(process);
                 processes.put(pid, process);
                 processInputs.put(pid, process.getOutputStream());
                 processCallbacks.put(pid, callbackContext);
-                processDetails.put(pid, new ProcessDetails(cmd, useDebian, pidVal));
+                processDetails.put(pid, new ProcessDetails(cmd, distro, pidVal));
 
                 sendPluginResult(callbackContext, pid, true);
 
@@ -165,7 +165,7 @@ public class BackgroundExecutor extends CordovaPlugin {
                 JSONObject item = new JSONObject();
                 item.put("id", id);
                 item.put("command", details.command);
-                item.put("debian", details.debian);
+                item.put("distro", details.distro);
                 item.put("startedAt", details.startedAt);
                 item.put("pid", details.pid);
                 result.put(item);
@@ -226,13 +226,13 @@ public class BackgroundExecutor extends CordovaPlugin {
 
     private static class ProcessDetails {
         final String command;
-        final boolean debian;
+        final String distro;
         final long startedAt;
         final long pid;
 
-        ProcessDetails(String command, boolean debian, long pid) {
+        ProcessDetails(String command, String distro, long pid) {
             this.command = command;
-            this.debian = debian;
+            this.distro = distro;
             this.startedAt = System.currentTimeMillis();
             this.pid = pid;
         }

@@ -8,6 +8,7 @@ import quickTools from "components/quickTools";
 import toast from "components/toast";
 import alert from "dialogs/alert";
 import confirm from "dialogs/confirm";
+import select from "dialogs/select";
 import EditorFile from "lib/editorFile";
 import openFile from "lib/openFile";
 import openFolder from "lib/openFolder";
@@ -444,11 +445,19 @@ class TerminalManager {
 				};
 			}
 
+			// Let the user pick a distro before installing
+			const distro = await this.selectDistro();
+			if (!distro) {
+				return { success: false, error: "No distro selected" };
+			}
+			Terminal.setActiveDistro(distro);
+
 			// Create installation progress terminal
 			const installTerminal = await this.createInstallationTerminal();
 
 			// Install terminal with progress logging
 			const installResult = await Terminal.install(
+				distro,
 				(message) => {
 					// Remove stdout/stderr prefix for
 					const cleanMessage = this.formatInstallLog(message);
@@ -493,6 +502,38 @@ class TerminalManager {
 			.join(" ");
 
 		return message.replace(/^(stdout|stderr)\s+/, "") || "Unknown error";
+	}
+
+	/**
+	 * Show a distro selection dialog and return the chosen distro id.
+	 * @returns {Promise<string|null>} Distro id, or null if cancelled.
+	 */
+	async selectDistro() {
+		try {
+			const distros = Terminal.getDistros ? Terminal.getDistros() : {};
+			const ids = Object.keys(distros);
+			if (ids.length === 0) return null;
+
+			const items = ids.map((id) => {
+				const d = distros[id];
+				return {
+					value: id,
+					text: d.name || id,
+					subText: `${d.packageManager || "apt"} • ${d.defaultShell || "/bin/bash"}`,
+					icon: d.icon || "terminal",
+				};
+			});
+
+			const chosen = await select("Choose a Linux distro", items, {
+				default: Terminal.getActiveDistro
+					? Terminal.getActiveDistro()
+					: "debian",
+			});
+			return chosen;
+		} catch (error) {
+			console.error("Distro selection cancelled:", error);
+			return null;
+		}
 	}
 
 	/**

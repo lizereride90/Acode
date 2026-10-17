@@ -394,7 +394,7 @@ public class Executor extends CordovaPlugin {
         }
     }
 
-    private void startProcess(String pid, String cmd, String debian) {
+    private void startProcess(String pid, String cmd, String distro) {
         CallbackContext callbackContext = getCallbackContext(pid);
         if (callbackContext != null) {
             PluginResult result = new PluginResult(PluginResult.Status.OK, pid);
@@ -407,7 +407,7 @@ public class Executor extends CordovaPlugin {
         Bundle bundle = new Bundle();
         bundle.putString("id", pid);
         bundle.putString("cmd", cmd);
-        bundle.putString("debian", debian);
+        bundle.putString("distro", distro);
         msg.setData(bundle);
         try {
             serviceMessenger.send(msg);
@@ -420,13 +420,13 @@ public class Executor extends CordovaPlugin {
         }
     }
 
-    private void exec(String execId, String cmd, String debian) {
+    private void exec(String execId, String cmd, String distro) {
         Message msg = Message.obtain(null, TerminalService.MSG_EXEC);
         msg.replyTo = handlerMessenger;
         Bundle bundle = new Bundle();
         bundle.putString("id", execId);
         bundle.putString("cmd", cmd);
-        bundle.putString("debian", debian);
+        bundle.putString("distro", distro);
         msg.setData(bundle);
         try {
             serviceMessenger.send(msg);

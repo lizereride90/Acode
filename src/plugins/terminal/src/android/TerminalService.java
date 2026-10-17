@@ -103,9 +103,9 @@ public class TerminalService extends Service {
             switch (msg.what) {
                 case MSG_START_PROCESS:
                     String cmd = bundle.getString("cmd");
-                    String debian = bundle.getString("debian");
+                    String distro = bundle.getString("distro");
                     clientMessengers.put(id, clientMessenger);
-                    startProcess(id, cmd, "true".equals(debian));
+                    startProcess(id, cmd, distro);
                     break;
                 case MSG_WRITE_TO_PROCESS:
                     String input = bundle.getString("input");
@@ -119,9 +119,9 @@ public class TerminalService extends Service {
                     break;
                 case MSG_EXEC:
                     String execCmd = bundle.getString("cmd");
-                    String execDebian = bundle.getString("debian");
+                    String execDistro = bundle.getString("distro");
                     clientMessengers.put(id, clientMessenger);
-                    exec(id, execCmd, "true".equals(execDebian));
+                    exec(id, execCmd, execDistro);
                     break;
                 case MSG_LIST_PROCESSES:
                     listProcesses(id, clientMessenger);
@@ -158,16 +158,16 @@ public class TerminalService extends Service {
         }
     }
 
-    private void startProcess(String pid, String cmd, boolean useDebian) {
+    private void startProcess(String pid, String cmd, String distro) {
         threadPool.execute(() -> {
             try {
-                ProcessBuilder builder = processManager.createProcessBuilder(cmd, useDebian);
+                ProcessBuilder builder = processManager.createProcessBuilder(cmd, distro);
                 Process process = builder.start();
                 
                 long pidVal = ProcessUtils.getPid(process);
                 processes.put(pid, process);
                 processInputs.put(pid, process.getOutputStream());
-                processDetails.put(pid, new ProcessDetails(cmd, useDebian, pidVal));
+                processDetails.put(pid, new ProcessDetails(cmd, distro, pidVal));
                 
                 // Stream stdout
                 threadPool.execute(() -> 
@@ -200,10 +200,10 @@ public class TerminalService extends Service {
         });
     }
 
-    private void exec(String execId, String cmd, boolean useDebian) {
+    private void exec(String execId, String cmd, String distro) {
         threadPool.execute(() -> {
             try {
-                ProcessManager.ExecResult result = processManager.executeCommand(cmd, useDebian);
+                ProcessManager.ExecResult result = processManager.executeCommand(cmd, distro);
                 
                 if (result.isSuccess()) {
                     sendExecResultToClient(execId, true, result.stdout);
@@ -288,7 +288,7 @@ public class TerminalService extends Service {
                 JSONObject item = new JSONObject();
                 item.put("id", id);
                 item.put("command", details.command);
-                item.put("debian", details.debian);
+                item.put("distro", details.distro);
                 item.put("startedAt", details.startedAt);
                 item.put("pid", details.pid);
                 result.put(item);
@@ -338,13 +338,13 @@ public class TerminalService extends Service {
 
     private static class ProcessDetails {
         final String command;
-        final boolean debian;
+        final String distro;
         final long startedAt;
         final long pid;
 
-        ProcessDetails(String command, boolean debian, long pid) {
+        ProcessDetails(String command, String distro, long pid) {
             this.command = command;
-            this.debian = debian;
+            this.distro = distro;
             this.startedAt = System.currentTimeMillis();
             this.pid = pid;
         }

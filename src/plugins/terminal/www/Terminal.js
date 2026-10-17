@@ -1,22 +1,71 @@
 const Executor = require("./Executor");
+const {
+    DISTROS,
+    DISTRO_IDS,
+    DEFAULT_DISTRO,
+    getDistro,
+    getDistroInfo,
+} = require("./distros");
+
+let activeDistro = DEFAULT_DISTRO;
 
 const Terminal = {
+    /**
+     * Sets the distro that the terminal launches. Persists across the session.
+     * @param {string} distro - Distro id (debian, arch, ubuntu, fedora, ...)
+     */
+    setActiveDistro(distro) {
+        activeDistro = getDistro(distro).id;
+    },
+
+    /**
+     * Returns the currently active distro id.
+     * @returns {string}
+     */
+    getActiveDistro() {
+        return activeDistro;
+    },
+
+    /**
+     * Returns the full distro registry.
+     * @returns {object}
+     */
+    getDistros() {
+        return DISTROS;
+    },
+
+    /**
+     * Returns package-manager info for a distro so external plugins
+     * (acode-opencode, distro-manager, lsp runtimes, ...) can install
+     * tooling without assuming Alpine/apk.
+     * @param {string} [distro] - defaults to active distro
+     * @returns {{id, name, packageManager, installCmd, updateCmd, searchCmd, removeCmd, defaultShell}}
+     */
+    getDistroInfo(distro) {
+        return getDistroInfo(distro || activeDistro);
+    },
+
     /**
      * Starts the AXS environment by writing init scripts and executing the sandbox.
      * @param {boolean} [installing=false] - Whether AXS is being started during installation.
      * @param {Function} [logger=console.log] - Function to log standard output.
      * @param {Function} [err_logger=console.error] - Function to log errors.
+     * @param {boolean} [failsafe=false] - Start with system shell (fail-safe mode).
+     * @param {string} [distro] - Distro id to launch (defaults to active distro).
      * @returns {Promise<boolean>} - Returns true if installation completes with exit code 0, void if not installing
      */
-    async startAxs(installing = false, logger = console.log, err_logger = console.error,failsafe = false) {
+    async startAxs(installing = false, logger = console.log, err_logger = console.error, failsafe = false, distro) {
+        const distroId = distro || activeDistro;
+        const d = getDistro(distroId);
         const filesDir = await new Promise((resolve, reject) => {
             system.getFilesDir(resolve, reject);
         });
 
         const failsafeArg = failsafe ? "--failsafe" : "";
+        const installingArg = installing ? "--installing" : "";
 
-        const [initDebian, rmWrapper, initSandbox] = await Promise.all([
-            readAsset("init-debian.sh"),
+        const [initDistro, rmWrapper, initSandbox] = await Promise.all([
+            readAsset("init-distro.sh"),
             readAsset("rm-wrapper.sh"),
             readAsset("init-sandbox.sh"),
         ]);
@@ -25,25 +74,27 @@ const Terminal = {
 
         const isFdroid = await Executor.execute("echo $FDROID");
 
-        if(isFdroid !== "true"){
-//the symlink must be updated everytime because the symlinks to native libs can break after app updates
-        await Executor.execute("rm -f $PREFIX/axs && ln -s $NATIVE_DIR/libaxs.so $PREFIX/axs")
-}
-        
+        if (isFdroid !== "true") {
+            // the symlink must be updated everytime because the symlinks to native libs can break after app updates
+            await Executor.execute("rm -f $PREFIX/axs && ln -s $NATIVE_DIR/libaxs.so $PREFIX/axs");
+        }
 
-        await writeText(`${filesDir}/init-debian.sh`, initDebian);
+        await writeText(`${filesDir}/init-distro.sh`, initDistro);
         await writeText(`${filesDir}/init-sandbox.sh`, initSandbox);
 
-        await deleteFile(`${filesDir}/debian/bin/rm`).catch(() => {});
-        await writeText(`${filesDir}/debian/bin/rm`, rmWrapper);
-        await setExec(`${filesDir}/alpine/bin/rm`, true);
+        const distroDir = `${filesDir}/distros/${distroId}`;
+        await deleteFile(`${distroDir}/bin/rm`).catch(() => {});
+        await writeText(`${distroDir}/bin/rm`, rmWrapper);
+        await setExec(`${distroDir}/bin/rm`, true);
+
+        // Pass the distro id as the first positional argument to the sandbox.
+        const sandboxArgs = `${distroId} ${installingArg} ${failsafeArg}`.trim();
 
         if (installing) {
             return new Promise((resolve, reject) => {
                 let lastError = "";
 
                 Executor.start("sh", (type, data) => {
-                    //console[type === "stderr" ? "error" : "log"](`[AXS] ${data}`);
                     logger(`${type} ${data}`);
 
                     if (type === "stderr" && data) {
@@ -61,7 +112,7 @@ const Terminal = {
                         resolve(success);
                     }
                 }).then(async (uuid) => {
-                    await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${installing ? "--installing" : ""} ${failsafeArg}; exit`);
+                    await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${sandboxArgs}; exit`);
                 }).catch((error) => {
                     const message = `Failed to start AXS: ${formatError(error)}`;
                     this.lastInstallError = message;
@@ -72,10 +123,9 @@ const Terminal = {
         } else {
             try {
                 const uuid = await Executor.start("sh", (type, data) => {
-                    //console[type === "stderr" ? "error" : "log"](`[AXS] ${data}`);
                     logger(`${type} ${data}`);
                 });
-                await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${installing ? "--installing" : ""} ${failsafeArg}; exit`);
+                await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${sandboxArgs}; exit`);
             } catch (error) {
                 const message = `Failed to start AXS: ${formatError(error)}`;
                 err_logger(message);
@@ -120,16 +170,19 @@ const Terminal = {
      * @param {Function} [err_logger=console.error] - Function to log errors.
      * @returns {Promise<boolean>} - Returns true if installation completes with exit code 0
      */
-    async install(logger = console.log, err_logger = console.error) {
+    async install(distro = DEFAULT_DISTRO, logger = console.log, err_logger = console.error) {
         if (!(await this.isSupported())) return false;
+
+        distro = getDistro(distro).id;
+        activeDistro = distro;
 
         const isFdroid = await Executor.execute("echo $FDROID");
 
         this.lastInstallError = "";
 
         try {
-            //cleanup before insatll
-            await this.uninstall();
+            //cleanup before install
+            await this.uninstall(distro);
         } catch (e) {
             //supress error
         }
@@ -144,30 +197,21 @@ const Terminal = {
 
         try {
 
+            const d = DISTROS[distro];
+            const distroArch = d.arch[arch];
+
+            if (!distroArch) {
+                throw new Error(`Unsupported architecture: ${arch} for distro ${distro}`);
+            }
+
             const architectures = {
-                "arm64-v8a": {
-                    libraryDirectory: "arm64",
-                    axsArchitecture: "arm64",
-                    debianDirectory: "arm64",
-                    debianFilename: "debian-rootfs-arm64.tar.gz",
-                    hasLibproot32: true
+                [arch]: {
+                    libraryDirectory: arch === "arm64-v8a" ? "arm64" : arch === "armeabi-v7a" ? "arm32" : "x64",
+                    axsArchitecture: arch === "arm64-v8a" ? "arm64" : arch === "armeabi-v7a" ? "armv7" : "x86_64",
+                    distroDirectory: distroArch.dir,
+                    distroFilename: distroArch.file,
+                    hasLibproot32: ["arm64-v8a", "x86_64"].includes(arch),
                 },
-
-                "armeabi-v7a": {
-                    libraryDirectory: "arm32",
-                    axsArchitecture: "armv7",
-                    debianDirectory: "armhf",
-                    debianFilename: "debian-rootfs-armhf.tar.gz",
-                    hasLibproot32: false
-                },
-
-                "x86_64": {
-                    libraryDirectory: "x64",
-                    axsArchitecture: "x86_64",
-                    debianDirectory: "amd64",
-                    debianFilename: "debian-rootfs-amd64.tar.gz",
-                    hasLibproot32: true
-                }
             };
 
             const architecture = architectures[arch];
@@ -176,9 +220,7 @@ const Terminal = {
                 throw new Error(`Unsupported architecture: ${arch}`);
             }
 
-            if(isFdroid === "true") {
-                const buildUrl = (...parts) => parts.join("");
-
+            const buildUrl = (...parts) => parts.join("");
 
             const strings = {
                 protocol: ["ht", "tps", ":", "//"],
@@ -197,14 +239,6 @@ const Terminal = {
                     "hub",
                     ".",
                     "com"
-                ],
-
-                debianDomain: [
-                    "deb",
-                    ".",
-                    "debian",
-                    ".",
-                    "org"
                 ],
                 acodeFoundation: [
                     "Acode",
@@ -256,13 +290,18 @@ const Terminal = {
                 "/releases/latest/download/"
             );
 
-            // Debian does not publish official per-arch minirootfs tarballs the way Alpine does.
-            // Point debianBase at a mirror hosting a Debian rootfs tarball per architecture,
-            // or bundle `debian_assets/<arch>/debian.rootfs` for F-Droid builds.
-            const debianBase = buildUrl(
+            // Distro rootfs tarball. Point these URLs at a mirror you trust, or
+            // bundle `distro_assets/<arch>/<distro>.rootfs` for F-Droid builds.
+            const distroBase = buildUrl(
                 ...strings.protocol,
-                ...strings.debianDomain,
-                "/debian/"
+                "github",
+                ".",
+                "com",
+                "/",
+                ...strings.bajrangCoder,
+                "/",
+                ...strings.acodexServer,
+                "/releases/latest/download/"
             );
 
             const libraryBaseUrl = buildUrl(
@@ -299,15 +338,16 @@ const Terminal = {
                 architecture.axsArchitecture
             );
 
-            const debianUrl = buildUrl(
-                debianBase,
-                architecture.debianDirectory,
+            const distroUrl = buildUrl(
+                distroBase,
+                architecture.distroDirectory,
                 "/",
-                architecture.debianFilename
+                architecture.distroFilename
             );
 
+            if (isFdroid !== "true") {
                 logger("⬇️  Downloading sandbox filesystem...");
-                await downloadFile(debianUrl, cordova.file.dataDirectory + "debian.tar.gz", "Sandbox filesystem");
+                await downloadFile(distroUrl, cordova.file.dataDirectory + `${distro}.tar.gz`, "Sandbox filesystem");
 
                 logger("⬇️  Downloading axs...");
                 await downloadFile(axsUrl, cordova.file.dataDirectory + "axs", "AXS");
@@ -327,11 +367,11 @@ const Terminal = {
                 }
 
                 logger("✅  All downloads completed");
-            }else{
+            } else {
                 logger("📦  Extracting assets...");
                 await new Promise((resolve, reject) => {
-                    system.extractAsset(`debian_assets/${architecture.libraryDirectory}/debian.rootfs`, `${filesDir}/debian.tar.gz`, resolve, (e)=>{
-                        console.error(`Failed to extract debian.tar.gz: ${formatError(e)}`);
+                    system.extractAsset(`distro_assets/${architecture.libraryDirectory}/${distro}.rootfs`, `${filesDir}/${distro}.tar.gz`, resolve, (e)=>{
+                        console.error(`Failed to extract ${distro}.tar.gz: ${formatError(e)}`);
                         reject(e);
                     });
                 });
@@ -348,27 +388,27 @@ const Terminal = {
 
             await ensureDir(`${filesDir}/.downloaded`);
 
-            const debianDir = `${filesDir}/debian`;
+            const distroDir = `${filesDir}/distros/${distro}`;
 
-            await ensureDir(debianDir);
+            await ensureDir(distroDir);
 
 
             logger("📦  Extracting sandbox filesystem...");
-            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/debian.tar.gz -C ${debianDir}`);
+            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/${distro}.tar.gz -C ${distroDir}`);
 
             logger("⚙️  Applying basic configuration...");
-            await writeText(`${debianDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
+            await writeText(`${distroDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
 
             const rmWrapper = await readAsset("rm-wrapper.sh");
-            await deleteFile(`${debianDir}/bin/rm`).catch(() => {});
-            await writeText(`${debianDir}/bin/rm`, rmWrapper);
-            await setExec(`${debianDir}/bin/rm`, true);
+            await deleteFile(`${distroDir}/bin/rm`).catch(() => {});
+            await writeText(`${distroDir}/bin/rm`, rmWrapper);
+            await setExec(`${distroDir}/bin/rm`, true);
 
             logger("✅  Extraction complete");
             await ensureDir(`${filesDir}/.extracted`);
 
             logger("⚙️  Updating sandbox enviroment...");
-            const installResult = await this.startAxs(true, logger, err_logger);
+            const installResult = await this.startAxs(true, logger, err_logger, false, distro);
             if (!installResult) {
                 throw new Error(this.lastInstallError || "Sandbox configuration failed.");
             }
@@ -384,40 +424,42 @@ const Terminal = {
     },
 
     /**
-     * Checks if debian is already installed.
+     * Checks if a distro is already installed.
+     * @param {string} [distro] - Distro id (defaults to active distro).
      * @returns {Promise<boolean>} - Returns true if all required files and directories exist.
      */
-    isInstalled() {
+    isInstalled(distro) {
+        distro = distro || activeDistro;
         return new Promise(async (resolve, reject) => {
             const filesDir = await new Promise((resolve, reject) => {
                 system.getFilesDir(resolve, reject);
             });
 
-            const debianExists = await new Promise((resolve, reject) => {
-                system.fileExists(`${filesDir}/debian`, false, (result) => {
+            const distroExists = await new Promise((resolve, reject) => {
+                system.fileExists(`${filesDir}/distros/${distro}`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const downloaded = debianExists && await new Promise((resolve, reject) => {
+            const downloaded = distroExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.downloaded`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const extracted = debianExists && await new Promise((resolve, reject) => {
+            const extracted = distroExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.extracted`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const configured = debianExists && await new Promise((resolve, reject) => {
+            const configured = distroExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.configured`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            resolve(debianExists && downloaded && extracted && configured);
+            resolve(distroExists && downloaded && extracted && configured);
         });
     },
 
@@ -433,12 +475,13 @@ const Terminal = {
         });
     },
     /**
-     * Creates a backup of the Debian Linux installation
+     * Creates a backup of a distro installation
      * @async
      * @function backup
-     * @description Creates a compressed tar archive of the Debian installation
+     * @description Creates a compressed tar archive of a distro installation
+     * @param {string} [distro] - Distro id (defaults to active distro).
      * @returns {Promise<string>} Promise that resolves to the file URI of the created backup file (aterm_backup.tar)
-     * @throws {string} Rejects with "Debian is not installed." if Debian is not currently installed
+     * @throws {string} Rejects with "<distro> is not installed." if the distro is not currently installed
      * @throws {string} Rejects with command output if backup creation fails
      * @example
      * try {
@@ -448,19 +491,20 @@ const Terminal = {
      *   console.error(`Backup failed: ${error}`);
      * }
      */
-    backup() {
+    backup(distro) {
+        distro = distro || activeDistro;
         return new Promise(async (resolve, reject) => {
-            if (!await this.isInstalled()) {
-                reject("Debian is not installed.");
+            if (!await this.isInstalled(distro)) {
+                reject(`${distro} is not installed.`);
                 return;
             }
             const cmd = `
             set -e
-            INCLUDE_FILES="debian .downloaded .extracted .configured axs"
+            INCLUDE_FILES="distros/${distro} .downloaded .extracted .configured axs"
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES libtalloc.so.2 libproot-xed.so"
             fi
-            EXCLUDE="--exclude=debian/data --exclude=debian/system --exclude=debian/vendor --exclude=debian/sdcard --exclude=debian/storage --exclude=debian/public --exclude=debian/apex --exclude=debian/odm --exclude=debian/product --exclude=debian/system_ext --exclude=debian/linkerconfig --exclude=debian/proc --exclude=debian/sys --exclude=debian/dev --exclude=debian/run --exclude=debian/tmp"
+            EXCLUDE="--exclude=distros/${distro}/data --exclude=distros/${distro}/system --exclude=distros/${distro}/vendor --exclude=distros/${distro}/sdcard --exclude=distros/${distro}/storage --exclude=distros/${distro}/public --exclude=distros/${distro}/apex --exclude=distros/${distro}/odm --exclude=distros/${distro}/product --exclude=distros/${distro}/system_ext --exclude=distros/${distro}/linkerconfig --exclude=distros/${distro}/proc --exclude=distros/${distro}/sys --exclude=distros/${distro}/dev --exclude=distros/${distro}/run --exclude=distros/${distro}/tmp"
             tar -cf "$PREFIX/aterm_backup.tar" -C "$PREFIX" $EXCLUDE $INCLUDE_FILES
             echo "ok"
             `;
@@ -473,24 +517,26 @@ const Terminal = {
         });
     },
     /**
-     * Restores Debian Linux installation from a backup file
+     * Restores a distro installation from a backup file
      * @async
      * @function restore
-     * @description Restores the Debian installation from a previously created backup file (aterm_backup.tar).
-     * This function stops any running Debian processes, removes existing installation files, and extracts
+     * @description Restores a distro installation from a previously created backup file (aterm_backup.tar).
+     * This function stops any running processes, removes existing installation files, and extracts
      * the backup to restore the previous state. The backup file must exist in the expected location.
+     * @param {string} [distro] - Distro id (defaults to active distro).
      * @returns {Promise<string>} Promise that resolves to "ok" when restoration completes successfully
      * @throws {string} Rejects with "Backup File does not exist" if aterm_backup.tar is not found
      * @throws {string} Rejects with command output if restoration fails
      * @example
      * try {
      *   await restore();
-     *   console.log("Debian installation restored successfully");
+     *   console.log("Distro installation restored successfully");
      * } catch (error) {
      *   console.error(`Restore failed: ${error}`);
      * }
      */
-    restore() {
+    restore(distro) {
+        distro = distro || activeDistro;
         return new Promise(async (resolve, reject) => {
             if (await this.isAxsRunning()) {
                 await this.stopAxs();
@@ -499,7 +545,7 @@ const Terminal = {
             const cmd = `
             set -e
 
-            INCLUDE_FILES="$PREFIX/debian $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
+            INCLUDE_FILES="$PREFIX/distros/${distro} $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
@@ -522,23 +568,25 @@ const Terminal = {
         });
     },
     /**
-     * Uninstalls the Alpine Linux installation
+     * Uninstalls a distro installation
      * @async
      * @function uninstall
-     * @description Completely removes the Alpine Linux installation from the device by deleting all
-     * Debian-related files and directories. This function stops any running Debian processes before
+     * @description Completely removes a distro installation from the device by deleting all
+     * distro-related files and directories. This function stops any running processes before
      * removal. NOTE: This does not perform cleanup of $PREFIX
+     * @param {string} [distro] - Distro id (defaults to active distro).
      * @returns {Promise<string>} Promise that resolves to "ok" when uninstallation completes successfully
      * @throws {string} Rejects with command output if uninstallation fails
      * @example
      * try {
      *   await uninstall();
-     *   console.log("Debian installation removed successfully");
+     *   console.log("Distro installation removed successfully");
      * } catch (error) {
      *   console.error(`Uninstall failed: ${error}`);
      * }
      */
-    uninstall() {
+    uninstall(distro) {
+        distro = distro || activeDistro;
         return new Promise(async (resolve, reject) => {
             if (await this.isAxsRunning()) {
                 await this.stopAxs();
@@ -547,7 +595,7 @@ const Terminal = {
             const cmd = `
             set -e
 
-            INCLUDE_FILES="$PREFIX/debian $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
+            INCLUDE_FILES="$PREFIX/distros/${distro} $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
@@ -570,7 +618,7 @@ const Terminal = {
 
     /**
      * Migrates the legacy terminal home directories into public/MIGRATE.
-     * Older builds stored user files under debian/home and debian/root.
+     * Older builds stored user files under <distro>/home and <distro>/root.
      * After /home, /root and /public were merged into a single public
      * directory, any files still left in the old locations are copied
      * into public/MIGRATE (keeping their source structure) so nothing is
@@ -588,18 +636,18 @@ const Terminal = {
 
                 COPIED=false
 
-                if [ -d "$PREFIX/debian/home" ] && [ -n "$(find "$PREFIX/debian/home" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+                if [ -d "$PREFIX/distros/${activeDistro}/home" ] && [ -n "$(find "$PREFIX/distros/${activeDistro}/home" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
                     mkdir -p "$MIGRATE/home"
-                    if cp -a "$PREFIX/debian/home/." "$MIGRATE/home/"; then
+                    if cp -a "$PREFIX/distros/${activeDistro}/home/." "$MIGRATE/home/"; then
                         COPIED=true
                     else
                         exit 1
                     fi
                 fi
 
-                if [ -d "$PREFIX/debian/root" ] && [ -n "$(find "$PREFIX/debian/root" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+                if [ -d "$PREFIX/distros/${activeDistro}/root" ] && [ -n "$(find "$PREFIX/distros/${activeDistro}/root" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
                     mkdir -p "$MIGRATE/root"
-                    if cp -a "$PREFIX/debian/root/." "$MIGRATE/root/"; then
+                    if cp -a "$PREFIX/distros/${activeDistro}/root/." "$MIGRATE/root/"; then
                         COPIED=true
                     else
                         exit 1

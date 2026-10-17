@@ -45,7 +45,8 @@ class Executor {
    *   - `"stdout"`: Standard output line.
    *   - `"stderr"`: Standard error line.
    *   - `"exit"`: Exit code of the process.
-   * @param {boolean} [debian=false] - Whether to run the command inside the Debian sandbox environment (`true`) or on Android directly (`false`).
+   * @param {string} [distro=""] - Distro id to run the command inside (debian, arch, ubuntu, ...).
+   *   Empty string runs on Android directly.
    * @returns {Promise<string>} Resolves with a unique process ID (UUID) used for future references like `write()` or `stop()`.
    *
    * @example
@@ -57,7 +58,7 @@ class Executor {
    *   executor.stop(uuid);
    * });
    */
-  start(command, onData, debian = false) {
+  start(command, onData, distro = "") {
     return new Promise((resolve, reject) => {
       let first = true;
       exec(
@@ -82,7 +83,7 @@ class Executor {
         reject,
         this.ExecutorType,
         "start",
-        [command, String(debian)]
+        [command, distro]
       );
     });
   }
@@ -173,7 +174,7 @@ class Executor {
   /**
    * Lists the processes currently managed by this executor.
    *
-   * @returns {Promise<Array<{id: string, command: string, debian: boolean, startedAt: number, background: boolean}>>}
+   * @returns {Promise<Array<{id: string, command: string, distro: string, startedAt: number, background: boolean}>>}
    */
   listProcesses() {
     return new Promise((resolve, reject) => {
@@ -234,7 +235,8 @@ class Executor {
    * Unlike {@link Executor#start}, this does not stream output.
    *
    * @param {string} command - The shell command to execute.
-   * @param {boolean} [debian=false] - Whether to run the command in the Debian sandbox (`true`) or Android environment (`false`).
+   * @param {string} [distro=""] - Distro id to run the command in (debian, arch, ubuntu, ...).
+   *   Empty string runs on Android directly.
    * @returns {Promise<string>} Resolves with standard output on success, rejects with an error or standard error on failure.
    *
    * @example
@@ -242,9 +244,9 @@ class Executor {
    *   .then(//console.log)
    *   .catch(console.error);
    */
-  execute(command, debian = false) {
+  execute(command, distro = "") {
     return new Promise((resolve, reject) => {
-      exec(resolve, reject, this.ExecutorType, "exec", [command, String(debian)]);
+      exec(resolve, reject, this.ExecutorType, "exec", [command, distro]);
     });
   }
 

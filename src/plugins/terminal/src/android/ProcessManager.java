@@ -21,13 +21,16 @@ public class ProcessManager {
     }
     
     /**
-     * Creates a ProcessBuilder with common environment setup
+     * Creates a ProcessBuilder with common environment setup.
+     * @param distro - distro id to launch inside proot (null/empty = raw Android shell).
      */
-    public ProcessBuilder createProcessBuilder(String cmd, boolean useDebian) {
-        if (useDebian) {
+    public ProcessBuilder createProcessBuilder(String cmd, String distro) {
+        if (distro != null && !distro.isEmpty()) {
             refreshAxsSymlink();
         }
-        String xcmd = useDebian ? "source $PREFIX/init-sandbox.sh " + cmd : cmd;
+        String xcmd = (distro != null && !distro.isEmpty())
+            ? "source $PREFIX/init-sandbox.sh " + distro + " " + cmd
+            : cmd;
         ProcessBuilder builder = new ProcessBuilder("sh", "-c", xcmd);
         setupEnvironment(builder.environment());
         return builder;
@@ -112,9 +115,10 @@ public class ProcessManager {
     
     /**
      * Executes a command and returns the result
+     * @param distro - distro id to run inside (null/empty = raw shell).
      */
-    public ExecResult executeCommand(String cmd, boolean useDebian) throws Exception {
-        ProcessBuilder builder = createProcessBuilder(cmd, useDebian);
+    public ExecResult executeCommand(String cmd, String distro) throws Exception {
+        ProcessBuilder builder = createProcessBuilder(cmd, distro);
         Process process = builder.start();
         
         String stdout = readStream(process.getInputStream());
