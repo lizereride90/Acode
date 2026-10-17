@@ -296,7 +296,13 @@ async function configureProject({
 		throw new Error(`Unable to read the widget id from ${paths.config}.`);
 	}
 
-	const targetId = variant === "free" ? ID_FREE : ID_PAID;
+	// Only force the standard acode id when config.xml still holds the default.
+	// A deliberately different id (e.g. a separate app build like acode-multi-distro)
+	// is preserved so it installs side-by-side with stock Acode.
+	const STANDARD_ACODE_ID = "com.foxdebug.acode";
+	const targetId = currentId === STANDARD_ACODE_ID
+		? (variant === "free" ? ID_FREE : ID_PAID)
+		: currentId;
 	const identityChanged = currentId !== targetId;
 	const actions = getAdmobSyncPlan({
 		variant,
