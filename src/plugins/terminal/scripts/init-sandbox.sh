@@ -5,6 +5,20 @@ mkdir -p "$PREFIX/public"
 
 export PROOT_TMP_DIR=$PREFIX/tmp
 
+# ---- Resolve distro BEFORE building ARGS (used in -b and -r bindings) ----
+DISTRO="${1:-ubuntu}"
+shift || true
+
+FAILSAFE=false
+INSTALLING=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --failsafe) FAILSAFE=true ;;
+        --installing) INSTALLING=true ;;
+    esac
+done
+
 if [ "$FDROID" = "true" ]; then
 
     if [ -f "$PREFIX/libproot.so" ]; then
@@ -68,7 +82,7 @@ ARGS="$ARGS -b $PREFIX/distros/$DISTRO/tmp:/dev/shm"
 # PRoot canonicalizes every -b host path with realpath(3).  The magic links
 # under /proc/self/fd only resolve when the descriptor points at a real file:
 # for pipes, sockets, anon inodes or memfds the link target is not a path
-# ("pipe:[123]"), so realpath(3) fails with ENOENT, proot drops the binding and
+# ("pipe:[N]"), so realpath(3) fails with ENOENT, proot drops the binding and
 # prints `can't sanitize binding "/proc/self/fd/N"`.  `[ -e ]` follows the magic
 # link to the underlying inode and therefore returns true for those descriptors,
 # which is why it does not filter them out.  Test the link target the same way
@@ -120,28 +134,6 @@ ARGS="$ARGS --link2symlink"
 ARGS="$ARGS --sysvipc"
 ARGS="$ARGS -L"
 
-
-FAILSAFE=false
-INSTALLING=false
-DISTRO="debian"
-
-# First positional argument is the distro id; everything else is a flag.
-if [ $# -gt 0 ]; then
-    case "$1" in
-        --failsafe|--installing) ;;
-        *) DISTRO="$1"; shift ;;
-    esac
-fi
-
-for arg in "$@"; do
-    case "$arg" in
-        --failsafe) FAILSAFE=true ;;
-        --installing) INSTALLING=true ;;
-    esac
-done
-
-# Allow distro to be overridden via $DISTRO env var
-DISTRO="${DISTRO:-debian}"
 
 if [ "$FAILSAFE" = true ] && [ "$INSTALLING" != true ]; then
     echo "$$" > "$PREFIX/pid"
