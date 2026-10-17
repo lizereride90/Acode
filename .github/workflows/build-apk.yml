@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - terminal/**
+      - acode-multi-distro
   pull_request:
     branches:
       - "**"
