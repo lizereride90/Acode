@@ -93,7 +93,7 @@ script2="rspack --mode $webpackmode"
 
 echo "type : $packageType"
 
-script4="cordova build android $cordovamode -- --packageType=$packageType"
+script4="cordova prepare android $cordovamode && TID=\$(cat .package-id 2>/dev/null || echo com.foxdebug.acode) && find platforms/android/app/src/main/java -name '*.java' -exec sed -i -E \"s/import com\\.foxdebug\\.[^;]*\\.R;/import \${TID}.R;/\" {} \\; && cordova compile android $cordovamode -- --packageType=$packageType"
 
 eval "
 echo \"${RED}$script1${NC}\";

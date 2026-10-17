@@ -304,6 +304,11 @@ async function configureProject({
 		? (variant === "free" ? ID_FREE : ID_PAID)
 		: currentId;
 	const identityChanged = currentId !== targetId;
+
+	// Record the effective package id so the build can repoint generated-R
+	// imports in platforms/ after Cordova prepare (prepare doesn't always
+	// re-copy modified plugin Java sources).
+	fsImpl.writeFileSync(path.join(rootDir, ".package-id"), targetId, "utf8");
 	const actions = getAdmobSyncPlan({
 		variant,
 		bundleExists: fsImpl.existsSync(paths.bundle),
