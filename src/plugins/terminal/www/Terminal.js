@@ -444,19 +444,26 @@ const Terminal = {
                 "/releases/latest/download/"
             );
 
-            // Distro rootfs tarball. Point these URLs at a mirror you trust, or
-            // bundle `distro_assets/<arch>/<distro>.rootfs` for F-Droid builds.
-            const distroBase = buildUrl(
-                ...strings.protocol,
-                "github",
-                ".",
-                "com",
-                "/",
-                ...strings.bajrangCoder,
-                "/",
-                ...strings.acodexServer,
-                "/releases/latest/download/"
-            );
+            // Distro rootfs tarball. Debian/Arch/etc do not publish official
+            // per-arch minirootfs tarballs at one stable URL. Configure a mirror
+            // via DISTRO_ROOTFS_BASE, or bundle `distro_assets/<arch>/<distro>.rootfs`
+            // for F-Droid builds.
+            let distroBase = "";
+            try {
+                distroBase = await Executor.execute("echo $DISTRO_ROOTFS_BASE");
+            } catch (e) {
+                // ignore — distroBase stays empty below
+            }
+            distroBase = (distroBase || "").trim();
+            if (!distroBase) {
+                throw new Error(
+                    "No distro rootfs mirror configured.\n" +
+                    "  F-Droid: bundle distro_assets/<arch>/<distro>.rootfs in the app.\n" +
+                    "  Play Store: set DISTRO_ROOTFS_BASE to a mirror hosting rootfs tarballs,\n" +
+                    "  e.g. https://example.com/mirrors/ then files are fetched as\n" +
+                    "  $DISTRO_ROOTFS_BASE/<arch>/<distro-rootfs>.tar.gz"
+                );
+            }
 
             const libraryBaseUrl = buildUrl(
                 rawGithubBase,
