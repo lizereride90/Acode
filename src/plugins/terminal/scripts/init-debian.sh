@@ -37,19 +37,19 @@ required_packages="bash command-not-found tzdata wget"
 missing_packages=""
 
 for pkg in $required_packages; do
-    if ! apk info -e "$pkg" >/dev/null 2>&1; then
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
         missing_packages="$missing_packages $pkg"
     fi
 done
 
 if [ -n "$missing_packages" ]; then
     echo -e "\e[34;1m[*] \e[0mInstalling important packages\e[0m"
-    apk update && apk upgrade
-    apk add $missing_packages
+    apt-get update && apt-get upgrade -y
+    apt-get install -y $missing_packages
     if [ $? -eq 0 ]; then
         echo -e "\e[32;1m[+] \e[0mSuccessfully installed\e[0m"
     fi
-    echo -e "\e[34m[*] \e[0mUse \e[32mapk\e[0m to install new packages\e[0m"
+    echo -e "\e[34m[*] \e[0mUse \e[32mapt\e[0m to install new packages\e[0m"
 fi
 
 
@@ -81,28 +81,27 @@ if [ "$INSTALLING" = true ]; then
 fi
 
 
-
     echo "$$" > "$PREFIX/pid"
     chmod +x "$PREFIX/axs"
 
-    if [ ! -e "$PREFIX/alpine/etc/acode_motd" ]; then
-        cat <<EOF > "$PREFIX/alpine/etc/acode_motd"
-Welcome to Alpine Linux in Acode!
+    if [ ! -e "$PREFIX/debian/etc/acode_motd" ]; then
+        cat <<EOF > "$PREFIX/debian/etc/acode_motd"
+Welcome to Debian in Acode!
 
 Working with packages:
 
- - Search:  apk search <query>
- - Install: apk add <package>
- - Uninstall: apk del <package>
- - Upgrade: apk update && apk upgrade
+ - Search:  apt search <query>
+ - Install: apt install <package>
+ - Uninstall: apt remove <package>
+ - Upgrade: apt-get update && apt-get upgrade -y
 
 EOF
     fi
 
     # Create acode CLI tool
-    if [ ! -e "$PREFIX/alpine/usr/local/bin/acode" ]; then
-        mkdir -p "$PREFIX/alpine/usr/local/bin"
-        cat <<'ACODE_CLI' > "$PREFIX/alpine/usr/local/bin/acode"
+    if [ ! -e "$PREFIX/debian/usr/local/bin/acode" ]; then
+        mkdir -p "$PREFIX/debian/usr/local/bin"
+        cat <<'ACODE_CLI' > "$PREFIX/debian/usr/local/bin/acode"
 #!/bin/bash
 # acode - Open files/folders in Acode editor
 # Uses OSC escape sequences to communicate with the Acode terminal
@@ -177,13 +176,13 @@ for arg in "$@"; do
     esac
 done
 ACODE_CLI
-        chmod +x "$PREFIX/alpine/usr/local/bin/acode"
+        chmod +x "$PREFIX/debian/usr/local/bin/acode"
     fi
 
     # Create initrc if it doesn't exist
     #initrc runs in bash so we can use bash features
-if [ ! -e "$PREFIX/alpine/initrc" ]; then
-    cat <<'EOF' > "$PREFIX/alpine/initrc"
+if [ ! -e "$PREFIX/debian/initrc" ]; then
+    cat <<'EOF' > "$PREFIX/debian/initrc"
 # Source rc files if they exist
 
 if [ -f "/etc/profile" ]; then
@@ -217,7 +216,7 @@ _shorten_path() {
     IFS='/' read -ra parts <<< "$path"
     local len=${#parts[@]}
 
-    for ((i=0; i<len; i++)); do
+    for ((i=0; i<len; i++)) do
         [[ -z "${parts[i]}" ]] && continue
         if [[ $i -lt $((len-1)) ]]; then
             result+="${parts[i]:0:1}/"
@@ -314,10 +313,10 @@ command_not_found_handle() {
     green="\e[1;32m"
     reset="\e[0m"
 
-    pkg=$(apk search -x "cmd:$cmd" 2>/dev/null | awk -F'-[0-9]' '{print $1}' | head -n 1)
+    pkg=$(apt-cache search "^${cmd}$" 2>/dev/null | awk '{print $1}' | head -n 1)
 
     if [ -n "$pkg" ]; then
-        echo -e "The program '$cmd' is not installed.\nInstall it by executing:\n ${green}apk add $pkg${reset}" >&2
+        echo -e "The program '$cmd' is not installed.\nInstall it by executing:\n ${green}apt install $pkg${reset}" >&2
     else
         echo "The program '$cmd' is not installed and no package provides it." >&2
     fi
@@ -341,15 +340,15 @@ EOF
 fi
 
 # Add PS1 only if not already present
-if ! grep -q 'PS1=' "$PREFIX/alpine/initrc"; then
+if ! grep -q 'PS1=' "$PREFIX/debian/initrc"; then
     # Smart path shortening (fish-style: ~/p/s/components)
-    echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\$_PS1_PATH\[\033[0m\] \[\$([ \$_PS1_EXIT -ne 0 ] && echo \"\033[31m\")\]\$\[\033[0m\] "' >> "$PREFIX/alpine/initrc"
+    echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\$_PS1_PATH\[\033[0m\] \[\$([ \$_PS1_EXIT -ne 0 ] && echo \"\033[31m\")\]\$\[\033[0m\] "' >> "$PREFIX/debian/initrc"
     # Simple prompt (uncomment below and comment above if you prefer full paths)
-    # echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\w\[\033[0m\] \$ "' >> "$PREFIX/alpine/initrc"
+    # echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\w\[\033[0m\] \$ "' >> "$PREFIX/debian/initrc"
 fi
 
 
-chmod +x "$PREFIX/alpine/initrc"
+chmod +x "$PREFIX/debian/initrc"
 
 if [ "$FAILSAFE" != true ]; then
     #everytime a terminal is started initrc will run

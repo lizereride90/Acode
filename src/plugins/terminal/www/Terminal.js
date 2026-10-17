@@ -15,8 +15,8 @@ const Terminal = {
 
         const failsafeArg = failsafe ? "--failsafe" : "";
 
-        const [initAlpine, rmWrapper, initSandbox] = await Promise.all([
-            readAsset("init-alpine.sh"),
+        const [initDebian, rmWrapper, initSandbox] = await Promise.all([
+            readAsset("init-debian.sh"),
             readAsset("rm-wrapper.sh"),
             readAsset("init-sandbox.sh"),
         ]);
@@ -31,11 +31,11 @@ const Terminal = {
 }
         
 
-        await writeText(`${filesDir}/init-alpine.sh`, initAlpine);
+        await writeText(`${filesDir}/init-debian.sh`, initDebian);
         await writeText(`${filesDir}/init-sandbox.sh`, initSandbox);
 
-        await deleteFile(`${filesDir}/alpine/bin/rm`).catch(() => {});
-        await writeText(`${filesDir}/alpine/bin/rm`, rmWrapper);
+        await deleteFile(`${filesDir}/debian/bin/rm`).catch(() => {});
+        await writeText(`${filesDir}/debian/bin/rm`, rmWrapper);
         await setExec(`${filesDir}/alpine/bin/rm`, true);
 
         if (installing) {
@@ -114,7 +114,7 @@ const Terminal = {
     },
 
     /**
-     * Installs Alpine by downloading binaries and extracting the root filesystem.
+     * Installs Debian by downloading binaries and extracting the root filesystem.
      * Also sets up additional dependencies for F-Droid variant.
      * @param {Function} [logger=console.log] - Function to log standard output.
      * @param {Function} [err_logger=console.error] - Function to log errors.
@@ -148,24 +148,24 @@ const Terminal = {
                 "arm64-v8a": {
                     libraryDirectory: "arm64",
                     axsArchitecture: "arm64",
-                    alpineDirectory: "aarch64",
-                    alpineFilename: "alpine-minirootfs-3.21.0-aarch64.tar.gz",
+                    debianDirectory: "arm64",
+                    debianFilename: "debian-rootfs-arm64.tar.gz",
                     hasLibproot32: true
                 },
 
                 "armeabi-v7a": {
                     libraryDirectory: "arm32",
                     axsArchitecture: "armv7",
-                    alpineDirectory: "armhf",
-                    alpineFilename: "alpine-minirootfs-3.21.0-armhf.tar.gz",
+                    debianDirectory: "armhf",
+                    debianFilename: "debian-rootfs-armhf.tar.gz",
                     hasLibproot32: false
                 },
 
                 "x86_64": {
                     libraryDirectory: "x64",
                     axsArchitecture: "x86_64",
-                    alpineDirectory: "x86_64",
-                    alpineFilename: "alpine-minirootfs-3.21.0-x86_64.tar.gz",
+                    debianDirectory: "amd64",
+                    debianFilename: "debian-rootfs-amd64.tar.gz",
                     hasLibproot32: true
                 }
             };
@@ -199,17 +199,13 @@ const Terminal = {
                     "com"
                 ],
 
-                alpineDomain: [
-                    "dl",
-                    "-",
-                    "cdn",
+                debianDomain: [
+                    "deb",
                     ".",
-                    "alpine",
-                    "linux",
+                    "debian",
                     ".",
                     "org"
                 ],
-
                 acodeFoundation: [
                     "Acode",
                     "-",
@@ -260,10 +256,13 @@ const Terminal = {
                 "/releases/latest/download/"
             );
 
-            const alpineBase = buildUrl(
+            // Debian does not publish official per-arch minirootfs tarballs the way Alpine does.
+            // Point debianBase at a mirror hosting a Debian rootfs tarball per architecture,
+            // or bundle `debian_assets/<arch>/debian.rootfs` for F-Droid builds.
+            const debianBase = buildUrl(
                 ...strings.protocol,
-                ...strings.alpineDomain,
-                "/alpine/v3.21/releases/"
+                ...strings.debianDomain,
+                "/debian/"
             );
 
             const libraryBaseUrl = buildUrl(
@@ -300,15 +299,15 @@ const Terminal = {
                 architecture.axsArchitecture
             );
 
-            const alpineUrl = buildUrl(
-                alpineBase,
-                architecture.alpineDirectory,
+            const debianUrl = buildUrl(
+                debianBase,
+                architecture.debianDirectory,
                 "/",
-                architecture.alpineFilename
+                architecture.debianFilename
             );
 
                 logger("⬇️  Downloading sandbox filesystem...");
-                await downloadFile(alpineUrl, cordova.file.dataDirectory + "alpine.tar.gz", "Sandbox filesystem");
+                await downloadFile(debianUrl, cordova.file.dataDirectory + "debian.tar.gz", "Sandbox filesystem");
 
                 logger("⬇️  Downloading axs...");
                 await downloadFile(axsUrl, cordova.file.dataDirectory + "axs", "AXS");
@@ -331,8 +330,8 @@ const Terminal = {
             }else{
                 logger("📦  Extracting assets...");
                 await new Promise((resolve, reject) => {
-                    system.extractAsset(`alpine_assets/${architecture.libraryDirectory}/alpine.rootfs`, `${filesDir}/alpine.tar.gz`, resolve, (e)=>{
-                        console.error(`Failed to extract alpine.tar.gz: ${formatError(e)}`);
+                    system.extractAsset(`debian_assets/${architecture.libraryDirectory}/debian.rootfs`, `${filesDir}/debian.tar.gz`, resolve, (e)=>{
+                        console.error(`Failed to extract debian.tar.gz: ${formatError(e)}`);
                         reject(e);
                     });
                 });
@@ -349,21 +348,21 @@ const Terminal = {
 
             await ensureDir(`${filesDir}/.downloaded`);
 
-            const alpineDir = `${filesDir}/alpine`;
+            const debianDir = `${filesDir}/debian`;
 
-            await ensureDir(alpineDir);
+            await ensureDir(debianDir);
 
 
             logger("📦  Extracting sandbox filesystem...");
-            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/alpine.tar.gz -C ${alpineDir}`);
+            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/debian.tar.gz -C ${debianDir}`);
 
             logger("⚙️  Applying basic configuration...");
-            await writeText(`${alpineDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
+            await writeText(`${debianDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
 
             const rmWrapper = await readAsset("rm-wrapper.sh");
-            await deleteFile(`${alpineDir}/bin/rm`).catch(() => {});
-            await writeText(`${alpineDir}/bin/rm`, rmWrapper);
-            await setExec(`${alpineDir}/bin/rm`, true);
+            await deleteFile(`${debianDir}/bin/rm`).catch(() => {});
+            await writeText(`${debianDir}/bin/rm`, rmWrapper);
+            await setExec(`${debianDir}/bin/rm`, true);
 
             logger("✅  Extraction complete");
             await ensureDir(`${filesDir}/.extracted`);
@@ -385,7 +384,7 @@ const Terminal = {
     },
 
     /**
-     * Checks if alpine is already installed.
+     * Checks if debian is already installed.
      * @returns {Promise<boolean>} - Returns true if all required files and directories exist.
      */
     isInstalled() {
@@ -394,31 +393,31 @@ const Terminal = {
                 system.getFilesDir(resolve, reject);
             });
 
-            const alpineExists = await new Promise((resolve, reject) => {
-                system.fileExists(`${filesDir}/alpine`, false, (result) => {
+            const debianExists = await new Promise((resolve, reject) => {
+                system.fileExists(`${filesDir}/debian`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const downloaded = alpineExists && await new Promise((resolve, reject) => {
+            const downloaded = debianExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.downloaded`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const extracted = alpineExists && await new Promise((resolve, reject) => {
+            const extracted = debianExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.extracted`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            const configured = alpineExists && await new Promise((resolve, reject) => {
+            const configured = debianExists && await new Promise((resolve, reject) => {
                 system.fileExists(`${filesDir}/.configured`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
 
-            resolve(alpineExists && downloaded && extracted && configured);
+            resolve(debianExists && downloaded && extracted && configured);
         });
     },
 
@@ -434,12 +433,12 @@ const Terminal = {
         });
     },
     /**
-     * Creates a backup of the Alpine Linux installation
+     * Creates a backup of the Debian Linux installation
      * @async
      * @function backup
-     * @description Creates a compressed tar archive of the Alpine installation
+     * @description Creates a compressed tar archive of the Debian installation
      * @returns {Promise<string>} Promise that resolves to the file URI of the created backup file (aterm_backup.tar)
-     * @throws {string} Rejects with "Alpine is not installed." if Alpine is not currently installed
+     * @throws {string} Rejects with "Debian is not installed." if Debian is not currently installed
      * @throws {string} Rejects with command output if backup creation fails
      * @example
      * try {
@@ -452,16 +451,16 @@ const Terminal = {
     backup() {
         return new Promise(async (resolve, reject) => {
             if (!await this.isInstalled()) {
-                reject("Alpine is not installed.");
+                reject("Debian is not installed.");
                 return;
             }
             const cmd = `
             set -e
-            INCLUDE_FILES="alpine .downloaded .extracted .configured axs"
+            INCLUDE_FILES="debian .downloaded .extracted .configured axs"
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES libtalloc.so.2 libproot-xed.so"
             fi
-            EXCLUDE="--exclude=alpine/data --exclude=alpine/system --exclude=alpine/vendor --exclude=alpine/sdcard --exclude=alpine/storage --exclude=alpine/public --exclude=alpine/apex --exclude=alpine/odm --exclude=alpine/product --exclude=alpine/system_ext --exclude=alpine/linkerconfig --exclude=alpine/proc --exclude=alpine/sys --exclude=alpine/dev --exclude=alpine/run --exclude=alpine/tmp"
+            EXCLUDE="--exclude=debian/data --exclude=debian/system --exclude=debian/vendor --exclude=debian/sdcard --exclude=debian/storage --exclude=debian/public --exclude=debian/apex --exclude=debian/odm --exclude=debian/product --exclude=debian/system_ext --exclude=debian/linkerconfig --exclude=debian/proc --exclude=debian/sys --exclude=debian/dev --exclude=debian/run --exclude=debian/tmp"
             tar -cf "$PREFIX/aterm_backup.tar" -C "$PREFIX" $EXCLUDE $INCLUDE_FILES
             echo "ok"
             `;
@@ -474,11 +473,11 @@ const Terminal = {
         });
     },
     /**
-     * Restores Alpine Linux installation from a backup file
+     * Restores Debian Linux installation from a backup file
      * @async
      * @function restore
-     * @description Restores the Alpine installation from a previously created backup file (aterm_backup.tar).
-     * This function stops any running Alpine processes, removes existing installation files, and extracts
+     * @description Restores the Debian installation from a previously created backup file (aterm_backup.tar).
+     * This function stops any running Debian processes, removes existing installation files, and extracts
      * the backup to restore the previous state. The backup file must exist in the expected location.
      * @returns {Promise<string>} Promise that resolves to "ok" when restoration completes successfully
      * @throws {string} Rejects with "Backup File does not exist" if aterm_backup.tar is not found
@@ -486,7 +485,7 @@ const Terminal = {
      * @example
      * try {
      *   await restore();
-     *   console.log("Alpine installation restored successfully");
+     *   console.log("Debian installation restored successfully");
      * } catch (error) {
      *   console.error(`Restore failed: ${error}`);
      * }
@@ -500,7 +499,7 @@ const Terminal = {
             const cmd = `
             set -e
 
-            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
+            INCLUDE_FILES="$PREFIX/debian $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
@@ -527,14 +526,14 @@ const Terminal = {
      * @async
      * @function uninstall
      * @description Completely removes the Alpine Linux installation from the device by deleting all
-     * Alpine-related files and directories. This function stops any running Alpine processes before
+     * Debian-related files and directories. This function stops any running Debian processes before
      * removal. NOTE: This does not perform cleanup of $PREFIX
      * @returns {Promise<string>} Promise that resolves to "ok" when uninstallation completes successfully
      * @throws {string} Rejects with command output if uninstallation fails
      * @example
      * try {
      *   await uninstall();
-     *   console.log("Alpine installation removed successfully");
+     *   console.log("Debian installation removed successfully");
      * } catch (error) {
      *   console.error(`Uninstall failed: ${error}`);
      * }
@@ -548,7 +547,7 @@ const Terminal = {
             const cmd = `
             set -e
 
-            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
+            INCLUDE_FILES="$PREFIX/debian $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
@@ -571,7 +570,7 @@ const Terminal = {
 
     /**
      * Migrates the legacy terminal home directories into public/MIGRATE.
-     * Older builds stored user files under alpine/home and alpine/root.
+     * Older builds stored user files under debian/home and debian/root.
      * After /home, /root and /public were merged into a single public
      * directory, any files still left in the old locations are copied
      * into public/MIGRATE (keeping their source structure) so nothing is
@@ -589,18 +588,18 @@ const Terminal = {
 
                 COPIED=false
 
-                if [ -d "$PREFIX/alpine/home" ] && [ -n "$(find "$PREFIX/alpine/home" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+                if [ -d "$PREFIX/debian/home" ] && [ -n "$(find "$PREFIX/debian/home" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
                     mkdir -p "$MIGRATE/home"
-                    if cp -a "$PREFIX/alpine/home/." "$MIGRATE/home/"; then
+                    if cp -a "$PREFIX/debian/home/." "$MIGRATE/home/"; then
                         COPIED=true
                     else
                         exit 1
                     fi
                 fi
 
-                if [ -d "$PREFIX/alpine/root" ] && [ -n "$(find "$PREFIX/alpine/root" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+                if [ -d "$PREFIX/debian/root" ] && [ -n "$(find "$PREFIX/debian/root" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
                     mkdir -p "$MIGRATE/root"
-                    if cp -a "$PREFIX/alpine/root/." "$MIGRATE/root/"; then
+                    if cp -a "$PREFIX/debian/root/." "$MIGRATE/root/"; then
                         COPIED=true
                     else
                         exit 1
