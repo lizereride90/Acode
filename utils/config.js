@@ -342,6 +342,29 @@ async function configureProject({
 		);
 	}
 
+	// Keep the generated-R import in plugin Java sources in sync with the
+	// package id. R is generated under <applicationId>.R, so sources that
+	// import com.foxdebug.acode.R must be repointed when the id changes
+	// (e.g. acode-multi-distro → com.foxdebug.acode.multidistro.R).
+	const javaRoot = path.join(rootDir, "src", "plugins");
+	if (fs.existsSync(javaRoot)) {
+		const walk = (dir) => {
+			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) walk(full);
+				else if (entry.isFile() && entry.name.endsWith(".java")) {
+					let content = fs.readFileSync(full, "utf8");
+					const next = content.replace(
+						/import com\.foxdebug\.[^;]*?\.R;/g,
+						`import ${targetId}.R;`,
+					);
+					if (next !== content) fs.writeFileSync(full, next, "utf8");
+				}
+			}
+		};
+		walk(javaRoot);
+	}
+
 	fsImpl.writeFileSync(paths.logo, LOGO_TEXT[variant], "utf8");
 
 	for (const action of actions) {
