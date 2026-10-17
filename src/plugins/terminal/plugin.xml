@@ -6,6 +6,10 @@
         <clobbers target="window.Terminal" />
     </js-module>
 
+    <js-module name="Distros" src="www/distros.js">
+        <clobbers target="window.Distros" />
+    </js-module>
+
     <!-- executor api -->
     <js-module name="Executor" src="www/Executor.js">
         <clobbers target="window.Executor" />

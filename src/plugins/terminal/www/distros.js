@@ -165,17 +165,17 @@ const DISTROS = {
 };
 
 /** All distro ids in display order. */
-export const DISTRO_IDS = Object.keys(DISTROS);
+const DISTRO_IDS = Object.keys(DISTROS);
 
 /** Default distro installed when the user makes no choice. */
-export const DEFAULT_DISTRO = "debian";
+const DEFAULT_DISTRO = "debian";
 
 /**
  * Look up a distro by id. Falls back to debian for unknown ids.
  * @param {string} id
- * @returns {import("./distros.js").Distro}
+ * @returns {object}
  */
-export function getDistro(id) {
+function getDistro(id) {
   return DISTROS[id] || DISTROS[DEFAULT_DISTRO];
 }
 
@@ -186,7 +186,7 @@ export function getDistro(id) {
  * @param {string} id
  * @returns {{id, name, packageManager, installCmd, updateCmd, searchCmd, removeCmd, defaultShell}}
  */
-export function getDistroInfo(id) {
+function getDistroInfo(id) {
   const d = getDistro(id);
   return {
     id: d.id,
@@ -200,4 +200,10 @@ export function getDistroInfo(id) {
   };
 }
 
-export default DISTROS;
+module.exports = {
+  DISTROS,
+  DISTRO_IDS,
+  DEFAULT_DISTRO,
+  getDistro,
+  getDistroInfo,
+};
