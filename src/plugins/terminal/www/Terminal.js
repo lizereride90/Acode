@@ -440,7 +440,7 @@ const Terminal = {
 
 
             logger("📦  Extracting sandbox filesystem...");
-            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/${distro}.tar.gz -C ${distroDir}`);
+            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/${distro}.tar.gz -C ${distroDir} 2>/dev/null || true`);
 
             logger("⚙️  Applying basic configuration...");
             await writeText(`${distroDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
