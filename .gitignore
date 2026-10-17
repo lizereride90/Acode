@@ -23,4 +23,4 @@ tsconfig.tsbuildinfo
 .dev-key.pem
 /www/cordova.js
 /www/cordova_plugins.js
-.pnpm-store/
+.pnpm-store/.package-id
